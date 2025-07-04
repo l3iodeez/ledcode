@@ -1,0 +1,89 @@
+ gbuffer     db    buffersize dup (?)
+fillpage      db    100h dup (0)    ;area fill work frames
+cursbit     db    10h            ;cursor bit mask
+cursor     dw    gbuffer+21h     ;cursor pointer
+fcopyflg    db    on             ;copy during fill flag
+fillflg       db    0              ;fill work flag
+direction   db    0               ;fill direction flag
+
+
+FILLIN:
+                mov        bx,cursor
+                push       bx                          ;save cursor position
+                mov        di,bx                     ;set DI as cursor in frame
+                and         bx,0ff80h
+                mov        aldsadr,bx
+                pop         bx
+                push       bx
+
+                mov        aldsflg,1                ;set display for frame, not work frame
+                lea          si,fillpage              ;set SI as cursor on work page
+                and         si,0ff80h
+                and         bx,7fh
+                or            bx,si
+                mov        cursor,bx
+                call          clrfr                       ;clear the work frame
+                mov        ch,cursbit              ;CH holds cursbit
+                mov        cl,0ffh                    ;set FOR/REV flag
+                jmp         fl4
+FL2:
+                mov        fillflg,0                    ;set FILL FLAG
+FL3:
+                mov        al,[di]           ;test: if cursor bit in frame
+                or            al,[bx]          ;or work frame is = 1, it doesn't
+                and         al,ch            ;need turning on, so skip it
+                jnz           fl6
+                mov        cursor,bx     ;NEIGHB uses CURSOR
+                mov        cursbit,ch     ;and CURSBIT, store 'em
+                call         neighb          ;but saves regs.
+                                                   ; checks only for orthagonal neighbors
+                jz             fl6                ;if bit in work frame has no neighbors
+FL4:                                            ;also skip, else
+                mov        al,[bx]           ;turn on the bit in work frame
+                or            al,ch
+                mov        [bx],al
+                cmp        fcopyflg,0      ;copy during fill active?
+                jz             fl5
+                mov        al,[di]            ;if so, set bit in buffer frame [DI] too.
+                or            al,ch
+                mov        [di],al
+FL5:
+                mov        fillflg,1    ;set FILL FLAG = 1, we changed a bit
+FL6:
+                mov        ax,di       ;check for top or bottom of frame
+                xor          al,cl        ;using FOR/REV flag in CL
+                and         al,7fh
+                jnz           fl7
+                mov        al,ch       ;trick - if ch (cursbit) is 01 and end mask
+                add         al,cl        ;is FF -or- if B is 80 and end mask is 00,
+                and         al,7fh     ;then last dot has been reached.
+                jnz           fl7
+                mov        al,fillflg          ;check fill flag
+                and         al,1
+                jz             flb
+                xor          cl,0ffh          ;toggle end flag 00-FF, FF-00
+                jmp         fl2
+FL7:
+                or            cl,cl              ;which direction are we going?
+                jz             fl9
+                clc                                ;clear carry, increment dot (right)
+                rcr           ch,1              ;ch holds cursbit
+                jnc          fl3
+                inc          bx
+                inc          di
+                rcr           ch,1
+                jmp         fl3
+FL9:
+                clc                          ;clear carry
+                rcl           ch,1        ;decrement dot (left)
+                jnc          fl3
+                dec         bx
+                dec         di
+                rcl           ch,1
+                jmp         fl3
+FLB:
+                mov        aldsflg,0
+                mov        cursbit,ch
+                pop         bx
+                mov        cursor,bx
+                ret
